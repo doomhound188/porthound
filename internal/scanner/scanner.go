@@ -9,11 +9,13 @@ import (
 )
 
 type ScanJob struct {
+	Host     string
 	Port     int
 	Protocol string
 }
 
 type ScanResult struct {
+	Host     string
 	Port     int
 	Protocol string
 	Open     bool
@@ -77,13 +79,13 @@ func ParsePorts(input string) ([]int, error) {
 	return ports, nil
 }
 
-func Worker(id int, jobs <-chan ScanJob, results chan<- ScanResult, host string, timeout time.Duration) {
+func Worker(id int, jobs <-chan ScanJob, results chan<- ScanResult, timeout time.Duration) {
 	for job := range jobs {
-		address := fmt.Sprintf("%s:%d", host, job.Port)
+		address := fmt.Sprintf("%s:%d", job.Host, job.Port)
 		conn, err := net.DialTimeout(job.Protocol, address, timeout)
 
 		if err != nil {
-			results <- ScanResult{Port: job.Port, Protocol: job.Protocol, Open: false}
+			results <- ScanResult{Host: job.Host, Port: job.Port, Protocol: job.Protocol, Open: false}
 			continue
 		}
 
@@ -121,6 +123,6 @@ func Worker(id int, jobs <-chan ScanJob, results chan<- ScanResult, host string,
 		}
 
 		conn.Close()
-		results <- ScanResult{Port: job.Port, Protocol: job.Protocol, Open: isOpen, State: state, Banner: banner}
+		results <- ScanResult{Host: job.Host, Port: job.Port, Protocol: job.Protocol, Open: isOpen, State: state, Banner: banner}
 	}
 }

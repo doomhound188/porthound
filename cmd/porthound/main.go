@@ -17,7 +17,51 @@ func main() {
 	timeoutPtr := flag.Int("timeout", 500, "")
 	portsPtr := flag.String("ports", "1-1024", "")
 	protoPtr := flag.String("proto", "tcp", "")
+	snPtr := flag.Bool("sn", false, "")
 	flag.Parse()
+
+	hostsList, err := scanner.ParseHosts(*hostPtr)
+	if err != nil {
+		fmt.Printf("Error parsing hosts: %v\n", err)
+		os.Exit(1)
+	}
+
+	if *snPtr {
+		hostsChan := make(chan string, *workerCount)
+		resultsChan := make(chan string)
+		var wg sync.WaitGroup
+
+		for i := 0; i < *workerCount; i++ {
+			wg.Add(1)
+			go func(workerID int) {
+				defer wg.Done()
+				scanner.PingWorker(workerID, hostsChan, resultsChan)
+			}(i)
+		}
+
+		go func() {
+			for _, h := range hostsList {
+				hostsChan <- h
+			}
+			close(hostsChan)
+		}()
+
+		go func() {
+			wg.Wait()
+			close(resultsChan)
+		}()
+
+		fmt.Printf("Porthound is ping sweeping %d hosts with %d workers...\n", len(hostsList), *workerCount)
+
+		for res := range resultsChan {
+			if res != "" {
+				fmt.Printf("[+] Host %s is ONLINE\n", res)
+			}
+		}
+
+		fmt.Println("Scan complete.")
+		return
+	}
 
 	portsList, err := scanner.ParsePorts(*portsPtr)
 	if err != nil {
@@ -45,14 +89,16 @@ func main() {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
-			scanner.Worker(workerID, jobs, results, *hostPtr, timeout)
+			scanner.Worker(workerID, jobs, results, timeout)
 		}(i)
 	}
 
 	go func() {
-		for _, p := range portsList {
-			for _, proto := range protocols {
-				jobs <- scanner.ScanJob{Port: p, Protocol: proto}
+		for _, h := range hostsList {
+			for _, p := range portsList {
+				for _, proto := range protocols {
+					jobs <- scanner.ScanJob{Host: h, Port: p, Protocol: proto}
+				}
 			}
 		}
 		close(jobs)
@@ -63,7 +109,7 @@ func main() {
 		close(results)
 	}()
 
-	fmt.Printf("Porthound is sniffing %s on %d ports (%s) with %d workers...\n", *hostPtr, len(portsList), protoInput, *workerCount)
+	fmt.Printf("Porthound is sniffing %d hosts on %d ports (%s) with %d workers...\n", len(hostsList), len(portsList), protoInput, *workerCount)
 
 	for res := range results {
 		if res.Open {
@@ -74,7 +120,7 @@ func main() {
 				cleanBanner = strings.ReplaceAll(cleanBanner, "\r", "")
 				bannerText = fmt.Sprintf(" [Banner: %s]", cleanBanner)
 			}
-			fmt.Printf("[+] %s Port %d is %s%s\n", strings.ToUpper(res.Protocol), res.Port, res.State, bannerText)
+			fmt.Printf("[+] %s %s:%d is %s%s\n", strings.ToUpper(res.Protocol), res.Host, res.Port, res.State, bannerText)
 		}
 	}
 
