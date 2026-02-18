@@ -22,3 +22,18 @@ func ScanPort(protocol, hostname string, port int, timeout time.Duration) {
 	conn.Close()
 	fmt.Printf("[+] Port %d is OPEN\n", port)
 }
+
+func Worker(id int, ports <-chan int, results chan<- int, host string, timeout time.Duration) {
+	for p := range ports {
+		address := fmt.Sprintf("%s:%d", host, p)
+		conn, err := net.DialTimeout("tcp", address, timeout)
+
+		if err != nil {
+			results <- 0
+			continue
+		}
+
+		conn.Close()
+		results <- p
+	}
+}
